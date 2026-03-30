@@ -1,0 +1,5 @@
+flask
+requests
+pdf2image
+pillow
+poppler-utils
