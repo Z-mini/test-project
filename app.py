@@ -21,10 +21,6 @@ def convert():
     pdf_url = data.get('url')
     imgbb_key = data.get('imgbb_key')
     
-    # 支持指定页码，默认全部
-    start_page = data.get('start_page', 1)
-    end_page = data.get('end_page', None)  # None 表示最后一页
-    
     print(f"Received request: url={pdf_url[:50] if pdf_url else 'None'}...")
     
     if not pdf_url or not imgbb_key:
@@ -43,33 +39,47 @@ def convert():
     # 2. PDF 转图片（所有页面）
     if HAS_PDF2IMAGE:
         try:
-            images = convert_from_bytes(pdf_data, dpi=150, first_page=start_page, last_page=end_page)
+            images = convert_from_bytes(pdf_data, dpi=150)
             print(f"Converted {len(images)} pages")
             
-            # 每页都上传，返回图片链接列表
-            urls = []
-            for i, img in enumerate(images):
-                img_byte_arr = BytesIO()
-                img.save(img_byte_arr, format='JPEG', quality=85)
-                img_b64 = base64.b64encode(img_byte_arr.getvalue()).decode()
-                
-                # 上传到 imgbb
-                resp = requests.post('https://api.imgbb.com/1/upload',
-                                   data={'key': imgbb_key, 'image': img_b64}, timeout=60)
-                result = resp.json()
-                
-                if result.get('success'):
-                    urls.append(result['data']['url'])
-                else:
-                    print(f"Upload failed for page {i+1}")
+            if not images:
+                return jsonify({'error': 'No pages found'}), 500
             
-            if urls:
+            # 拼成一张长图
+            if len(images) == 1:
+                final_img = images[0]
+            else:
+                widths = [img.width for img in images]
+                max_width = max(widths)
+                total_height = sum(img.height for img in images)
+                
+                final_img = Image.new('RGB', (max_width, total_height), 'white')
+                
+                y_offset = 0
+                for img in images:
+                    if img.width != max_width:
+                        ratio = max_width / img.width
+                        new_height = int(img.height * ratio)
+                        img = img.resize((max_width, new_height), Image.LANCZOS)
+                    
+                    final_img.paste(img, (0, y_offset))
+                    y_offset += img.height
+            
+            img_byte_arr = BytesIO()
+            final_img.save(img_byte_arr, format='JPEG', quality=85)
+            img_b64 = base64.b64encode(img_byte_arr.getvalue()).decode()
+            
+            resp = requests.post('https://api.imgbb.com/1/upload',
+                               data={'key': imgbb_key, 'image': img_b64}, timeout=120)
+            result = resp.json()
+            
+            if result.get('success'):
                 return jsonify({
-                    'urls': urls,
-                    'page_count': len(urls)
+                    'url': result['data']['url'],
+                    'page_count': len(images)
                 })
             else:
-                return jsonify({'error': 'All uploads failed'}), 500
+                return jsonify({'error': 'imgbb upload failed'}), 500
                 
         except Exception as e:
             print(f"pdf2image error: {e}")
