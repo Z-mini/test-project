@@ -8,14 +8,13 @@ from pathlib import Path
 
 app = Flask(__name__)
 
-HAS_CONVERSION = False
 try:
     from pdf2image import convert_from_bytes
     from PIL import Image
     from io import BytesIO
     HAS_CONVERSION = True
 except ImportError:
-    pass
+    HAS_CONVERSION = False
 
 def download_file(url, timeout=60):
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -23,12 +22,22 @@ def download_file(url, timeout=60):
     resp.raise_for_status()
     return resp.content
 
-def convert_to_pdf(input_path, output_path):
-    result = subprocess.run(
-        ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', output_path, input_path],
-        capture_output=True, timeout=120
-    )
-    return result.returncode == 0
+def convert_to_pdf(input_path, output_dir):
+    output_path = os.path.join(output_dir, "output.pdf")
+    
+    cmd = ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', output_dir, input_path]
+    print(f"Running: {' '.join(cmd)}")
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
+        print(f"Return code: {result.returncode}")
+        
+        if result.returncode == 0 and os.path.exists(output_path):
+            return output_path
+    except Exception as e:
+        print(f"soffice error: {e}")
+    
+    return None
 
 def images_to_long_image(images):
     if not images:
@@ -58,12 +67,16 @@ def process_file(file_data, file_ext, imgbb_key):
         if file_ext.lower() == '.pdf':
             pdf_file = input_file
         else:
-            pdf_file = tmp_path / "output.pdf"
-            if not convert_to_pdf(str(input_file), str(tmp_path)):
-                return None, "Conversion to PDF failed"
+            pdf_file = convert_to_pdf(str(input_file), str(tmp_path))
+            if not pdf_file:
+                return None, f"Failed to convert {file_ext} to PDF"
+        
+        if not os.path.exists(pdf_file):
+            return None, "PDF file not found"
         
         try:
-            images = convert_from_bytes(pdf_file.read_bytes(), dpi=150)
+            with open(pdf_file, 'rb') as f:
+                images = convert_from_bytes(f.read(), dpi=150)
         except Exception as e:
             return None, f"PDF to image failed: {str(e)}"
         
