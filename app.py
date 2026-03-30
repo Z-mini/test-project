@@ -37,6 +37,16 @@ def convert_to_pdf(input_path, output_dir):
     except Exception as e:
         print(f"soffice error: {e}")
     
+    # 备选：尝试 libreoffice 命令
+    cmd2 = ['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', output_dir, input_path]
+    
+    try:
+        result = subprocess.run(cmd2, capture_output=True, timeout=120)
+        if result.returncode == 0 and os.path.exists(output_path):
+            return output_path
+    except Exception as e:
+        print(f"libreoffice error: {e}")
+    
     return None
 
 def images_to_long_image(images):
@@ -129,7 +139,7 @@ def convert():
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({'status': 'ok'})
+    return jsonify({'status': 'ok', 'conversion': HAS_CONVERSION})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
