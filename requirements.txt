@@ -3,3 +3,6 @@ requests
 pdf2image
 pillow
 poppler-utils
+python-pptx
+python-docx
+openpyxl
