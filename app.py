@@ -9,7 +9,8 @@ from pathlib import Path
 app = Flask(__name__)
 
 try:
-    from pdf2image import convert_from_bytes
+    from pdf2image import convert_from_bytes, convert_from_path
+    from pdf2image.pdf2image import pdfinfo_from_path
     from PIL import Image
     from io import BytesIO
     HAS_CONVERSION = True
@@ -122,20 +123,44 @@ def process_pdf(file_data, imgbb_key):
         pdf_file = tmp_path / "input.pdf"
         pdf_file.write_bytes(file_data)
 
+        # 降低 DPI 省内存, 大文件用更低 DPI
+        file_mb = len(file_data) / (1024 * 1024)
+        dpi = 100 if file_mb > 5 else 150
+        print(f"PDF size: {file_mb:.1f}MB, using DPI: {dpi}")
+
         try:
-            with open(pdf_file, 'rb') as f:
-                images = convert_from_bytes(f.read(), dpi=150)
+            info = pdfinfo_from_path(str(pdf_file))
+            total_pages = info.get("Pages", 1)
+            print(f"Total pages: {total_pages}")
+        except Exception as e:
+            print(f"pdfinfo failed: {e}, fallback to single batch")
+            total_pages = 0
+
+        images = []
+        try:
+            if total_pages > 0 and total_pages > 10:
+                # 超过10页, 分批处理, 每批5页
+                for start in range(1, total_pages + 1, 5):
+                    end = min(start + 4, total_pages)
+                    print(f"Processing pages {start}-{end}")
+                    batch = convert_from_path(str(pdf_file), dpi=dpi,
+                                             first_page=start, last_page=end)
+                    images.extend(batch)
+            else:
+                images = convert_from_bytes(file_data, dpi=dpi)
         except Exception as e:
             return None, f"PDF to image failed: {str(e)}"
 
         if not images:
             return None, "No pages found"
 
+        print(f"Got {len(images)} images, merging...")
         final_img = images_to_long_image(images)
         img_byte_arr = BytesIO()
-        final_img.save(img_byte_arr, format='JPEG', quality=85)
+        final_img.save(img_byte_arr, format='JPEG', quality=80)
         img_b64 = base64.b64encode(img_byte_arr.getvalue()).decode()
 
+        print(f"Uploading to imgbb ({len(img_b64)} chars base64)...")
         resp = requests.post('https://api.imgbb.com/1/upload',
                            data={'key': imgbb_key, 'image': img_b64}, timeout=120)
         result = resp.json()
