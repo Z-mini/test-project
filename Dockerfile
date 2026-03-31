@@ -1,7 +1,16 @@
 FROM ubuntu:22.04
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 RUN apt-get update && \
-    apt-get install -y libreoffice-writer libreoffice-calc libreoffice-impress poppler-utils python3-pip && \
+    apt-get install -y \
+    libreoffice \
+    libreoffice-nogui \
+    fonts-dejavu \
+    fonts-liberation \
+    fonts-noto-cjk \
+    popler-utils \
+    python3-pip && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
