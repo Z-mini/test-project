@@ -25,42 +25,53 @@ def download_file(url, timeout=60):
 def convert_to_pdf(input_path, output_dir):
     output_path = os.path.join(output_dir, "output.pdf")
 
-    soffice_path = subprocess.run(['which', 'soffice'], capture_output=True, text=True)
-    libreoffice_path = subprocess.run(['which', 'libreoffice'], capture_output=True, text=True)
-    print(f"soffice: {soffice_path.stdout.strip()}")
-    print(f"libreoffice: {libreoffice_path.stdout.strip()}")
+    env = os.environ.copy()
+    env['HOME'] = '/tmp'
+    env['USER'] = 'root'
 
-    cmd = ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', output_dir, input_path]
+    cmd = ['soffice', '--headless', '--norestore',
+           '--convert-to', 'pdf', '--outdir', output_dir, input_path]
     print(f"Running: {' '.join(cmd)}")
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        print(f"Return code: {result.returncode}")
-        print(f"STDOUT: {result.stdout[:500]}")
-        print(f"STDERR: {result.stderr[:500]}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=env)
+        print(f"soffice rc={result.returncode}")
+        print(f"stdout: {result.stdout[:500]}")
+        print(f"stderr: {result.stderr[:500]}")
 
         if result.returncode == 0 and os.path.exists(output_path):
             return output_path
-    except FileNotFoundError as e:
-        print(f"soffice not found: {e}")
-    except Exception as e:
-        print(f"soffice error: {e}")
 
-    cmd2 = ['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', output_dir, input_path]
+        err_msg = result.stderr[:300] if result.stderr else "no stderr"
+        print(f"soffice failed: {err_msg}")
+    except FileNotFoundError as e:
+        err_msg = f"soffice binary not found: {e}"
+        print(err_msg)
+    except Exception as e:
+        err_msg = f"soffice exception: {e}"
+        print(err_msg)
+
+    cmd2 = ['libreoffice', '--headless', '--norestore',
+            '--convert-to', 'pdf', '--outdir', output_dir, input_path]
     print(f"Running: {' '.join(cmd2)}")
 
     try:
-        result = subprocess.run(cmd2, capture_output=True, text=True, timeout=120)
-        print(f"Return code: {result.returncode}")
-        print(f"STDOUT: {result.stdout[:500]}")
-        print(f"STDERR: {result.stderr[:500]}")
+        result = subprocess.run(cmd2, capture_output=True, text=True, timeout=120, env=env)
+        print(f"libreoffice rc={result.returncode}")
+        print(f"stdout: {result.stdout[:500]}")
+        print(f"stderr: {result.stderr[:500]}")
 
         if result.returncode == 0 and os.path.exists(output_path):
             return output_path
+
+        err_msg2 = result.stderr[:300] if result.stderr else "no stderr"
+        print(f"libreoffice failed: {err_msg2}")
     except FileNotFoundError as e:
-        print(f"libreoffice not found: {e}")
+        err_msg2 = f"libreoffice binary not found: {e}"
+        print(err_msg2)
     except Exception as e:
-        print(f"libreoffice error: {e}")
+        err_msg2 = f"libreoffice exception: {e}"
+        print(err_msg2)
 
     return None
 
@@ -94,7 +105,7 @@ def process_file(file_data, file_ext, imgbb_key):
         else:
             pdf_file = convert_to_pdf(str(input_file), str(tmp_path))
             if not pdf_file:
-                return None, f"Failed to convert {file_ext} to PDF (check Railway logs)"
+                return None, f"Failed to convert {file_ext} to PDF"
 
         if not os.path.exists(pdf_file):
             return None, "PDF file not found"
@@ -119,7 +130,7 @@ def process_file(file_data, file_ext, imgbb_key):
 
         if result.get('success'):
             return {'url': result['data']['url'], 'page_count': len(images)}, None
-        return None, f"Upload failed: {result.get('error', {}).get('message', 'unknown')}"
+        return None, f"Upload failed"
 
 @app.route('/convert', methods=['POST'])
 def convert():
