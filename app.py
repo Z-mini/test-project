@@ -29,7 +29,11 @@ def convert_to_pdf(input_path, output_dir):
     env['HOME'] = '/tmp'
     env['USER'] = 'root'
 
-    cmd = ['soffice', '--headless', '--norestore',
+    lo_profile = os.path.join(output_dir, '.lo_profile')
+    os.makedirs(lo_profile, exist_ok=True)
+
+    cmd = ['soffice', '--headless', '--norestore', '--nolockcheck',
+           '-env:UserInstallation=file://' + lo_profile,
            '--convert-to', 'pdf', '--outdir', output_dir, input_path]
     print(f"Running: {' '.join(cmd)}")
 
@@ -41,17 +45,14 @@ def convert_to_pdf(input_path, output_dir):
 
         if result.returncode == 0 and os.path.exists(output_path):
             return output_path
-
-        err_msg = result.stderr[:300] if result.stderr else "no stderr"
-        print(f"soffice failed: {err_msg}")
+        print(f"soffice failed: {result.stderr[:300]}")
     except FileNotFoundError as e:
-        err_msg = f"soffice binary not found: {e}"
-        print(err_msg)
+        print(f"soffice not found: {e}")
     except Exception as e:
-        err_msg = f"soffice exception: {e}"
-        print(err_msg)
+        print(f"soffice exception: {e}")
 
-    cmd2 = ['libreoffice', '--headless', '--norestore',
+    cmd2 = ['libreoffice', '--headless', '--norestore', '--nolockcheck',
+            '-env:UserInstallation=file://' + lo_profile,
             '--convert-to', 'pdf', '--outdir', output_dir, input_path]
     print(f"Running: {' '.join(cmd2)}")
 
@@ -63,15 +64,11 @@ def convert_to_pdf(input_path, output_dir):
 
         if result.returncode == 0 and os.path.exists(output_path):
             return output_path
-
-        err_msg2 = result.stderr[:300] if result.stderr else "no stderr"
-        print(f"libreoffice failed: {err_msg2}")
+        print(f"libreoffice failed: {result.stderr[:300]}")
     except FileNotFoundError as e:
-        err_msg2 = f"libreoffice binary not found: {e}"
-        print(err_msg2)
+        print(f"libreoffice not found: {e}")
     except Exception as e:
-        err_msg2 = f"libreoffice exception: {e}"
-        print(err_msg2)
+        print(f"libreoffice exception: {e}")
 
     return None
 
