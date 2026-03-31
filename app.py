@@ -24,29 +24,44 @@ def download_file(url, timeout=60):
 
 def convert_to_pdf(input_path, output_dir):
     output_path = os.path.join(output_dir, "output.pdf")
-    
+
+    soffice_path = subprocess.run(['which', 'soffice'], capture_output=True, text=True)
+    libreoffice_path = subprocess.run(['which', 'libreoffice'], capture_output=True, text=True)
+    print(f"soffice: {soffice_path.stdout.strip()}")
+    print(f"libreoffice: {libreoffice_path.stdout.strip()}")
+
     cmd = ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', output_dir, input_path]
     print(f"Running: {' '.join(cmd)}")
-    
+
     try:
-        result = subprocess.run(cmd, capture_output=True, timeout=120)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         print(f"Return code: {result.returncode}")
-        
+        print(f"STDOUT: {result.stdout[:500]}")
+        print(f"STDERR: {result.stderr[:500]}")
+
         if result.returncode == 0 and os.path.exists(output_path):
             return output_path
+    except FileNotFoundError as e:
+        print(f"soffice not found: {e}")
     except Exception as e:
         print(f"soffice error: {e}")
-    
-    # 备选：尝试 libreoffice 命令
+
     cmd2 = ['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', output_dir, input_path]
-    
+    print(f"Running: {' '.join(cmd2)}")
+
     try:
-        result = subprocess.run(cmd2, capture_output=True, timeout=120)
+        result = subprocess.run(cmd2, capture_output=True, text=True, timeout=120)
+        print(f"Return code: {result.returncode}")
+        print(f"STDOUT: {result.stdout[:500]}")
+        print(f"STDERR: {result.stderr[:500]}")
+
         if result.returncode == 0 and os.path.exists(output_path):
             return output_path
+    except FileNotFoundError as e:
+        print(f"libreoffice not found: {e}")
     except Exception as e:
         print(f"libreoffice error: {e}")
-    
+
     return None
 
 def images_to_long_image(images):
@@ -73,48 +88,48 @@ def process_file(file_data, file_ext, imgbb_key):
         tmp_path = Path(tmpdir)
         input_file = tmp_path / f"input{file_ext}"
         input_file.write_bytes(file_data)
-        
+
         if file_ext.lower() == '.pdf':
             pdf_file = input_file
         else:
             pdf_file = convert_to_pdf(str(input_file), str(tmp_path))
             if not pdf_file:
-                return None, f"Failed to convert {file_ext} to PDF"
-        
+                return None, f"Failed to convert {file_ext} to PDF (check Railway logs)"
+
         if not os.path.exists(pdf_file):
             return None, "PDF file not found"
-        
+
         try:
             with open(pdf_file, 'rb') as f:
                 images = convert_from_bytes(f.read(), dpi=150)
         except Exception as e:
             return None, f"PDF to image failed: {str(e)}"
-        
+
         if not images:
             return None, "No pages found"
-        
+
         final_img = images_to_long_image(images)
         img_byte_arr = BytesIO()
         final_img.save(img_byte_arr, format='JPEG', quality=85)
         img_b64 = base64.b64encode(img_byte_arr.getvalue()).decode()
-        
+
         resp = requests.post('https://api.imgbb.com/1/upload',
                            data={'key': imgbb_key, 'image': img_b64}, timeout=120)
         result = resp.json()
-        
+
         if result.get('success'):
             return {'url': result['data']['url'], 'page_count': len(images)}, None
-        return None, "Upload failed"
+        return None, f"Upload failed: {result.get('error', {}).get('message', 'unknown')}"
 
 @app.route('/convert', methods=['POST'])
 def convert():
     data = request.json
     file_url = data.get('url')
     imgbb_key = data.get('imgbb_key')
-    
+
     if not file_url or not imgbb_key:
         return jsonify({'error': 'Missing url or imgbb_key'}), 400
-    
+
     lower_url = file_url.lower()
     if '.pdf' in lower_url:
         file_ext = '.pdf'
@@ -126,12 +141,12 @@ def convert():
         file_ext = '.xlsx'
     else:
         return jsonify({'error': 'Unsupported file type'}), 400
-    
+
     try:
         file_data = download_file(file_url)
     except Exception as e:
         return jsonify({'error': f'Download failed: {str(e)}'}), 500
-    
+
     result, error = process_file(file_data, file_ext, imgbb_key)
     if error:
         return jsonify({'error': error}), 500
@@ -140,6 +155,28 @@ def convert():
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok', 'conversion': HAS_CONVERSION})
+
+@app.route('/debug', methods=['GET'])
+def debug():
+    info = {}
+    info['soffice'] = subprocess.run(['which', 'soffice'], capture_output=True, text=True).stdout.strip()
+    info['libreoffice'] = subprocess.run(['which', 'libreoffice'], capture_output=True, text=True).stdout.strip()
+    try:
+        r = subprocess.run(['soffice', '--version'], capture_output=True, text=True, timeout=10)
+        info['soffice_version'] = r.stdout.strip() or r.stderr.strip()
+    except Exception as e:
+        info['soffice_version'] = str(e)
+    try:
+        r = subprocess.run(['dpkg', '-l'], capture_output=True, text=True, timeout=10)
+        info['libreoffice_packages'] = [l for l in r.stdout.split('\n') if 'libreoffice' in l.lower()]
+    except Exception as e:
+        info['libreoffice_packages'] = str(e)
+    try:
+        r = subprocess.run(['fc-list'], capture_output=True, text=True, timeout=10)
+        info['font_count'] = len([l for l in r.stdout.split('\n') if l.strip()])
+    except Exception as e:
+        info['font_count'] = str(e)
+    return jsonify(info)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
