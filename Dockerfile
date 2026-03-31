@@ -17,6 +17,9 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+# 创建非 root 用户运行 LibreOffice
+RUN useradd -m -s /bin/bash lo_user
+
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
