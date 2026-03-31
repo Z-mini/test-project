@@ -25,50 +25,40 @@ def download_file(url, timeout=60):
 def convert_to_pdf(input_path, output_dir):
     output_path = os.path.join(output_dir, "output.pdf")
 
-    env = os.environ.copy()
-    env['HOME'] = '/tmp'
-    env['USER'] = 'root'
-
-    lo_profile = os.path.join(output_dir, '.lo_profile')
-    os.makedirs(lo_profile, exist_ok=True)
-
-    cmd = ['soffice', '--headless', '--norestore', '--nolockcheck',
-           '-env:UserInstallation=file://' + lo_profile,
-           '--convert-to', 'pdf', '--outdir', output_dir, input_path]
-    print(f"Running: {' '.join(cmd)}")
+    # 用 lo_user 运行 LibreOffice（绕过 root 限制）
+    cmd_str = f"soffice --headless --norestore --convert-to pdf --outdir '{output_dir}' '{input_path}'"
+    cmd = ['su', '-', 'lo_user', '-c', cmd_str]
+    print(f"Running as lo_user: {cmd_str}")
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=env)
-        print(f"soffice rc={result.returncode}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        print(f"rc={result.returncode}")
         print(f"stdout: {result.stdout[:500]}")
         print(f"stderr: {result.stderr[:500]}")
 
         if result.returncode == 0 and os.path.exists(output_path):
             return output_path
-        print(f"soffice failed: {result.stderr[:300]}")
-    except FileNotFoundError as e:
-        print(f"soffice not found: {e}")
     except Exception as e:
-        print(f"soffice exception: {e}")
+        print(f"error: {e}")
 
-    cmd2 = ['libreoffice', '--headless', '--norestore', '--nolockcheck',
-            '-env:UserInstallation=file://' + lo_profile,
+    # 备选: 直接试 soffice
+    cmd2 = ['soffice', '--headless', '--norestore',
+            '-env:UserInstallation=file:///tmp/lo_profile',
             '--convert-to', 'pdf', '--outdir', output_dir, input_path]
-    print(f"Running: {' '.join(cmd2)}")
+    print(f"Running direct: {' '.join(cmd2)}")
 
     try:
+        env = os.environ.copy()
+        env['HOME'] = '/tmp'
         result = subprocess.run(cmd2, capture_output=True, text=True, timeout=120, env=env)
-        print(f"libreoffice rc={result.returncode}")
+        print(f"rc={result.returncode}")
         print(f"stdout: {result.stdout[:500]}")
         print(f"stderr: {result.stderr[:500]}")
 
         if result.returncode == 0 and os.path.exists(output_path):
             return output_path
-        print(f"libreoffice failed: {result.stderr[:300]}")
-    except FileNotFoundError as e:
-        print(f"libreoffice not found: {e}")
     except Exception as e:
-        print(f"libreoffice exception: {e}")
+        print(f"direct error: {e}")
 
     return None
 
@@ -93,9 +83,11 @@ def images_to_long_image(images):
 
 def process_file(file_data, file_ext, imgbb_key):
     with tempfile.TemporaryDirectory() as tmpdir:
+        os.chmod(tmpdir, 0o777)
         tmp_path = Path(tmpdir)
         input_file = tmp_path / f"input{file_ext}"
         input_file.write_bytes(file_data)
+        os.chmod(str(input_file), 0o666)
 
         if file_ext.lower() == '.pdf':
             pdf_file = input_file
