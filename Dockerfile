@@ -1,16 +1,19 @@
-FROM ubuntu:22.04
+FROM ubuntu:2.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository universe && \
+    apt-get update && \
     apt-get install -y \
+    python3-pip \
     libreoffice \
     libreoffice-nogui \
     fonts-dejavu \
     fonts-liberation \
     fonts-noto-cjk \
-    popler-utils \
-    python3-pip && \
+    poppler-utils && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
